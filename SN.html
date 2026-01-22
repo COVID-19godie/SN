@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stellar Evolution & Supernova Physics Engine</title>
+    <style>
+        :root {
+            --bg-color: #0f0f12;
+            --panel-color: #1a1a1f;
+            --text-color: #e0e0e0;
+            --accent-color: #4da6ff;
+            --border-color: #333;
+        }
+        body {
+            font-family: 'Segoe UI', Consolas, monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        /* 顶部导航与状态 */
+        header {
+            background-color: var(--panel-color);
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        h1 { margin: 0; font-size: 1.1rem; letter-spacing: 1px; color: var(--accent-color); }
+        .status-bar { font-size: 0.85rem; color: #888; }
+        .phase-indicator {
+            background: #222;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            margin-left: 10px;
+            font-weight: bold;
+        }
+
+        /* 主界面布局 */
+        .container {
+            display: flex;
+            flex: 1;
+            height: calc(100vh - 50px);
+        }
+
+        /* 左侧：控制与参数面板 */
+        .sidebar {
+            width: 320px;
+            background-color: var(--panel-color);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            color: #666;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 5px;
+            margin-top: 20px;
+        }
+        .section-title:first-child { margin-top: 0; }
+
+        .control-group { margin-bottom: 15px; }
+        .control-group label { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 5px; }
+        .control-group input[type="range"] { width: 100%; cursor: pointer; }
+        .val-display { color: var(--accent-color); font-weight: bold; }
+
+        .btn {
+            background: #333;
+            color: white;
+            border: 1px solid #444;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 10px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .btn:hover { background: #444; border-color: #666; }
+        .btn.primary { background: var(--accent-color); border-color: var(--accent-color); color: #000; font-weight: bold; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* 中间：可视化视窗 */
+        .viewport {
+            flex: 1;
+            position: relative;
+            background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
+            display: flex;
+            flex-direction: column;
+        }
+        canvas#visualCanvas { width: 100%; height: 60%; display: block; }
+        
+        /* 底部：图表区 */
+        .charts-area {
+            height: 40%;
+            border-top: 1px solid var(--border-color);
+            background: #151515;
+            display: flex;
+            padding: 10px;
+            gap: 10px;
+        }
+        .chart-box {
+            flex: 1;
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 4px;
+            position: relative;
+        }
+        .chart-label {
+            position: absolute; top: 5px; left: 5px; 
+            font-size: 0.75rem; color: #888; pointer-events: none;
+        }
+        canvas.data-canvas { width: 100%; height: 100%; }
+
+        /* 物理数据监视器 */
+        .physics-monitor {
+            background: rgba(0,0,0,0.6);
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            color: #aaa;
+            line-height: 1.4;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 200px;
+            pointer-events: none;
+        }
+        .physics-val { color: #fff; float: right; }
+
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>PHYSICS SIMULATOR <span style="font-weight:normal; opacity:0.6;">| Semi-Analytical Framework</span></h1>
+    <div class="status-bar">
+        Current Phase: <span id="phaseDisplay" class="phase-indicator">IDLE</span>
+    </div>
+</header>
+
+<div class="container">
+    <div class="sidebar">
+        <div class="section-title">Stage I: Progenitor Evolution</div>
+        
+        <div class="control-group">
+            <label>Initial Mass (ZAMS) <span class="val-display" id="valInitMass">15.0 M☉</span></label>
+            <input type="range" id="slInitMass" min="8" max="40" step="0.5" value="15">
+        </div>
+        
+        <button id="btnEvolve" class="btn primary">Run Evolution</button>
+
+        <div id="progenitorResults" style="display:none; padding:10px; background:#222; border-radius:4px; margin-bottom:15px; border-left: 2px solid var(--accent-color);">
+            <div style="font-size:0.75rem; color:#888;">Evolution Outcome:</div>
+            <div style="font-size:0.8rem;">Final Mass: <span class="val-display" id="outFinalMass">--</span></div>
+            <div style="font-size:0.8rem;">Final Radius: <span class="val-display" id="outFinalRadius">--</span></div>
+            <div style="font-size:0.8rem;">Core Density: <span class="val-display" id="outCoreRho">--</span></div>
+        </div>
+
+        <div class="section-title">Stage II: Supernova Explosion</div>
+        
+        <div class="control-group">
+            <label>Explosion Energy <span class="val-display" id="valExplodeE">1.0 FOE</span></label>
+            <input type="range" id="slExplodeE" min="0.5" max="5.0" step="0.1" value="1.0">
+        </div>
+
+        <div class="control-group">
+            <label>Nickel-56 Mass <span class="val-display" id="valNiMass">0.07 M☉</span></label>
+            <input type="range" id="slNiMass" min="0.01" max="0.5" step="0.01" value="0.07">
+        </div>
+
+        <button id="btnExplode" class="btn" disabled>Trigger Core Collapse</button>
+        <button id="btnReset" class="btn">Reset Simulation</button>
+    </div>
+
+    <div class="viewport">
+        <canvas id="visualCanvas"></canvas>
+        <div class="physics-monitor" id="monitor">
+            Wait for initialization...
+        </div>
+
+        <div class="charts-area">
+            <div class="chart-box">
+                <canvas id="chartLeft"></canvas>
+                <div class="chart-label" id="labelLeft">H-R Diagram</div>
+            </div>
+            <div class="chart-box">
+                <canvas id="chartRight"></canvas>
+                <div class="chart-label" id="labelRight">Light Curve (Log L)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * 物理内核 - 完全基于半解析算法框架
+ * * 包含两个核心模块：
+ * 1. ProgenitorEngine: 基于同调性关系 (Homology) 的恒星演化
+ * 2. SupernovaEngine: 基于 Arnett (1982) 的光变曲线解
+ */
+
+// --- 物理常数 (cgs units) ---
+const CONST = {
+    MSUN: 1.989e33,
+    LSUN: 3.828e33,
+    RSUN: 6.955e10,
+    G: 6.674e-8,
+    C: 2.9979e10,
+    SIGMA_SB: 5.67e-5,
+    DAY: 86400,
+    FOE: 1e51,
+    // 衰变参数
+    TAU_NI: 8.8 * 86400,
+    TAU_CO: 111.3 * 86400,
+    E_NI: 3.9e10,
+    E_CO: 6.8e9
+};
+
+// --- 全局状态机 ---
+const STATE = {
+    phase: 'IDLE', // IDLE, EVOLVING, READY_TO_EXPLODE, EXPLODING, DONE
+    progenitor: {
+        M_init: 15, // M_sun
+        history: [], // 保存演化轨迹点
+        final: null  // 最终状态
+    },
+    supernova: {
+        data: [],    // 光变曲线数据
+        t: 0,        // 爆炸后时间
+        params: {}   // 爆炸参数
+    },
+    animId: null
+};
+
+// --- DOM 元素引用 ---
+const UI = {
+    slInitMass: document.getElementById('slInitMass'),
+    valInitMass: document.getElementById('valInitMass'),
+    btnEvolve: document.getElementById('btnEvolve'),
+    outRes: document.getElementById('progenitorResults'),
+    outFM: document.getElementById('outFinalMass'),
+    outFR: document.getElementById('outFinalRadius'),
+    outCR: document.getElementById('outCoreRho'),
+    slExpE: document.getElementById('slExplodeE'),
+    valExpE: document.getElementById('valExplodeE'),
+    slNi: document.getElementById('slNiMass'),
+    valNi: document.getElementById('valNiMass'),
+    btnExplode: document.getElementById('btnExplode'),
+    btnReset: document.getElementById('btnReset'),
+    phaseDisp: document.getElementById('phaseDisplay'),
+    monitor: document.getElementById('monitor'),
+    cvsVis: document.getElementById('visualCanvas'),
+    cvsLeft: document.getElementById('chartLeft'),
+    cvsRight: document.getElementById('chartRight'),
+    lblLeft: document.getElementById('labelLeft'),
+    lblRight: document.getElementById('labelRight')
+};
+
+// --- 初始化与事件绑定 ---
+function init() {
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // 输入同步
+    UI.slInitMass.addEventListener('input', (e) => {
+        UI.valInitMass.innerText = e.target.value + " M☉";
+        STATE.progenitor.M_init = parseFloat(e.target.value);
+    });
+    UI.slExpE.addEventListener('input', (e) => UI.valExpE.innerText = e.target.value + " FOE");
+    UI.slNi.addEventListener('input', (e) => UI.valNi.innerText = e.target.value + " M☉");
+
+    // 按钮事件
+    UI.btnEvolve.addEventListener('click', runProgenitorPhase);
+    UI.btnExplode.addEventListener('click', runExplosionPhase);
+    UI.btnReset.addEventListener('click', resetSim);
+
+    renderLoop();
+}
+
+function resizeCanvas() {
+    [UI.cvsVis, UI.cvsLeft, UI.cvsRight].forEach(c => {
+        c.width = c.parentElement.clientWidth;
+        c.height = c.parentElement.clientHeight;
+    });
+}
+
+// =========================================================
+// 物理引擎 I: 前身星演化 (Progenitor Engine)
+// 基于 Homology Scaling Laws
+// =========================================================
+function runProgenitorPhase() {
+    if (STATE.phase === 'EVOLVING') return;
+    
+    // 锁定界面
+    STATE.phase = 'EVOLVING';
+    UI.phaseDisp.innerText = "STAGE I: STELLAR EVOLUTION";
+    UI.phaseDisp.style.color = "#4da6ff";
+    UI.btnEvolve.disabled = true;
+    UI.slInitMass.disabled = true;
+
+    const M = STATE.progenitor.M_init;
+    
+    // 1. 生成演化轨迹数据 (HR Diagram Track)
+    const track = [];
+    
+    // Step A: ZAMS (Zero Age Main Sequence)
+    // L ~ M^3.5, R ~ M^0.7 (Massive stars)
+    const L_ms = Math.pow(M, 3.5); // L_sun
+    const R_ms = Math.pow(M, 0.7); // R_sun
+    const T_ms = 5778 * Math.pow(L_ms, 0.25) / Math.pow(R_ms, 0.5);
+    track.push({ stage: 'ZAMS', L: L_ms, R: R_ms, T: T_ms, age: 0 });
+
+    // Step B: TAMS (Terminal Age Main Sequence)
+    // Radius expands slightly, Luminosity increases
+    track.push({ stage: 'TAMS', L: L_ms * 1.5, R: R_ms * 1.8, T: T_ms * 0.9, age: 10/Math.pow(M, 2) });
+
+    // Step C: Red Supergiant (RSG)
+    // Mirror Principle: Core contracts, Envelope expands drastically
+    // For M > 10, becomes RSG. R increases ~100x
+    const R_rsg = R_ms * 100; // Simplified scaling
+    const L_rsg = L_ms * 2.0; // Shell burning contribution
+    const T_rsg = 5778 * Math.pow(L_rsg, 0.25) / Math.pow(R_rsg, 0.5);
+    track.push({ stage: 'RSG', L: L_rsg, R: R_rsg, T: T_rsg, age: track[1].age * 1.1 });
+
+    // 2. 计算最终核心坍缩参数
+    // Mass loss approximation (Reimers-like or simple factor)
+    // Assume losing 15-20% mass due to stellar winds
+    const M_final = M * 0.85; 
+    const Rho_core = 1e9 + (M * 1e8); // g/cm^3, rough scaling for iron core
+
+    STATE.progenitor.history = track;
+    STATE.progenitor.final = { M: M_final, R: R_rsg, Rho: Rho_core };
+
+    // 3. 演化动画播放
+    let step = 0;
+    const totalSteps = 100;
+    
+    UI.lblLeft.innerText = "H-R Diagram (Evolution Track)";
+    UI.lblRight.innerText = "Core Density Evolution";
+
+    const animInterval = setInterval(() => {
+        step++;
+        const progress = step / totalSteps;
+        
+        // 更新左侧图表：绘制动态 HR 路径
+        drawHRTrack(track, progress);
+        // 更新可视化：恒星变红变大
+        drawStarEvolution(track, progress);
+
+        if (step >= totalSteps) {
+            clearInterval(animInterval);
+            finishProgenitorPhase();
+        }
+    }, 20);
+}
+
+function finishProgenitorPhase() {
+    STATE.phase = 'READY_TO_EXPLODE';
+    UI.phaseDisp.innerText = "READY FOR COLLAPSE";
+    UI.phaseDisp.style.color = "#ff4d4d";
+    
+    // 显示结果
+    UI.outRes.style.display = 'block';
+    UI.outFM.innerText = STATE.progenitor.final.M.toFixed(2) + " M☉";
+    UI.outFR.innerText = STATE.progenitor.final.R.toFixed(1) + " R☉";
+    UI.outCR.innerText = STATE.progenitor.final.Rho.toExponential(2) + " g/cc";
+    
+    // 激活阶段二按钮
+    UI.btnExplode.disabled = false;
+    
+    // 更新监视器
+    UI.monitor.innerHTML = `
+        <div style="border-bottom:1px solid #555; margin-bottom:5px; color:#fff">PRE-SN STATE</div>
+        Structure: <span class="physics-val">Onion Skin</span><br>
+        Core: <span class="physics-val">Iron (Fe-56)</span><br>
+        Status: <span class="physics-val" style="color:red">Unstable</span>
+    `;
+}
+
+// =========================================================
+// 物理引擎 II: 超新星爆炸 (Supernova Engine)
+// 基于 Arnett (1982) Analytic Solutions
+// =========================================================
+function runExplosionPhase() {
+    if (STATE.phase === 'EXPLODING') return;
+    
+    STATE.phase = 'EXPLODING';
+    UI.phaseDisp.innerText = "STAGE II: EXPLOSION";
+    UI.btnExplode.disabled = true;
+    UI.slExpE.disabled = true;
+    UI.slNi.disabled = true;
+    
+    // 1. 获取物理输入
+    const M_ej = STATE.progenitor.final.M * CONST.MSUN; // g
+    const E_k = parseFloat(UI.slExpE.value) * CONST.FOE; // erg
+    const M_Ni = parseFloat(UI.slNi.value) * CONST.MSUN; // g
+    const Kappa = 0.34; // cm^2/g (Electron scattering dominant in H-rich env)
+
+    // 2. 计算 Arnett 关键标度
+    // Diffusion timescale: tau_m \propto (Kappa * M^3 / E)^0.25
+    const v_sc = Math.sqrt(2 * E_k / M_ej); // Characteristic velocity
+    const beta = 13.8;
+    const tau_m = Math.pow((2 * Kappa * M_ej) / (beta * CONST.C * v_sc), 0.5);
+    
+    // Gamma-ray optical depth scale
+    const t0_gamma = tau_m; // Approximation
+
+    // 3. 生成光变曲线数据 (0 - 150 days)
+    const curve = [];
+    for (let d = 0.1; d <= 150; d += 0.5) {
+        let t = d * CONST.DAY;
+        let x = t / tau_m;
+
+        // Heating rate (Radioactive decay)
+        let heat = M_Ni * (CONST.E_NI * Math.exp(-t/CONST.TAU_NI) + CONST.E_CO * Math.exp(-t/CONST.TAU_CO));
+        
+        // Gamma leakage factor: D(t) = 1 - exp(-(t0/t)^2)
+        // At late times, expanding nebula becomes transparent to gammas
+        let dep = 1 - Math.exp(-Math.pow(t0_gamma/t, 2));
+        
+        // Diffusion modulation (Approximation of the Arnett integral)
+        // Early time: trapped (1 - exp(-x^2))
+        let diff = 1 - Math.exp(-Math.pow(x, 2));
+
+        let L = heat * dep * diff;
+        
+        // Photospheric Radius: R = v * t
+        let R_ph = v_sc * t + (STATE.progenitor.final.R * CONST.RSUN);
+        
+        // Effective Temperature
+        let T_eff = Math.pow(L / (4 * Math.PI * Math.pow(R_ph, 2) * CONST.SIGMA_SB), 0.25);
+        if(T_eff < 0) T_eff = 0;
+
+        curve.push({ t: d, L: L, T: T_eff, R: R_ph });
+    }
+    
+    STATE.supernova.data = curve;
+    STATE.supernova.t = 0; // Animation time pointer (index)
+
+    // 4. 切换图表标签
+    UI.lblLeft.innerText = "Photospheric Temperature (K)";
+    UI.lblRight.innerText = "Bolometric Luminosity (erg/s)";
+
+    // 5. 启动爆炸动画
+    startExplosionAnim();
+}
+
+function startExplosionAnim() {
+    let idx = 0;
+    const data = STATE.supernova.data;
+    const maxIdx = data.length;
+    
+    // 重绘循环
+    function animStep() {
+        if (STATE.phase !== 'EXPLODING') return;
+
+        idx += 1; // Speed
+        if (idx >= maxIdx) {
+            STATE.phase = 'DONE';
+            UI.phaseDisp.innerText = "SIMULATION COMPLETE";
+            return;
+        }
+
+        const currentData = data[idx];
+        
+        // 1. 绘制火球
+        drawExplosionVisual(currentData);
+        
+        // 2. 绘制光变曲线 (动态更新)
+        drawLightCurve(data.slice(0, idx));
+        
+        // 3. 绘制温度演化
+        drawTempCurve(data.slice(0, idx));
+
+        // 4. 更新监视器
+        UI.monitor.innerHTML = `
+            <div style="border-bottom:1px solid #555; margin-bottom:5px; color:#fff">SUPERNOVA PHASE</div>
+            Time: <span class="physics-val">${currentData.t.toFixed(1)} days</span><br>
+            Luminosity: <span class="physics-val">${(Math.log10(currentData.L/CONST.LSUN)).toFixed(2)} L☉</span><br>
+            Temp: <span class="physics-val">${Math.round(currentData.T)} K</span><br>
+            Radius: <span class="physics-val">${(currentData.R/1e14).toFixed(1)} Tm</span>
+        `;
+
+        requestAnimationFrame(animStep);
+    }
+    animStep();
+}
+
+// =========================================================
+// 绘图引擎 (Canvas Rendering)
+// =========================================================
+
+// --- 阶段一：恒星演化 ---
+function drawStarEvolution(track, progress) {
+    const ctx = UI.cvsVis.getContext('2d');
+    const w = UI.cvsVis.width;
+    const h = UI.cvsVis.height;
+    
+    ctx.clearRect(0,0,w,h);
+    
+    // 插值计算当前状态
+    const idx = Math.floor(progress * (track.length - 1));
+    // 简单的线性插值太麻烦，直接取最近点演示即可
+    // 实际上我们需要根据 progress 在 ZAMS -> TAMS -> RSG 之间插值
+    
+    // 为了平滑动画，我们定义一个 "Visual Radius" 和 "Visual Color"
+    // R_vis 从 10px 变到 100px
+    let baseR = 10;
+    let targetR = 80;
+    let currentR = baseR + (targetR - baseR) * progress;
+    
+    // Color: Blue (ZAMS) -> Red (RSG)
+    // Blue: 200, 200, 255; Red: 255, 50, 50
+    let r = 200 + (55 * progress);
+    let g = 200 - (150 * progress);
+    let b = 255 - (205 * progress);
+    
+    // 绘制恒星
+    const cx = w/2, cy = h/2;
+    
+    // Halo
+    let grad = ctx.createRadialGradient(cx, cy, currentR*0.8, cx, cy, currentR*2.0);
+    grad.addColorStop(0, `rgba(${r},${g},${b}, 0.8)`);
+    grad.addColorStop(1, `rgba(${r},${g},${b}, 0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx, cy, currentR*2, 0, Math.PI*2); ctx.fill();
+    
+    // Core
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.beginPath(); ctx.arc(cx, cy, currentR, 0, Math.PI*2); ctx.fill();
+}
+
+function drawHRTrack(track, progress) {
+    const ctx = UI.cvsLeft.getContext('2d');
+    const w = UI.cvsLeft.width;
+    const h = UI.cvsLeft.height;
+    
+    ctx.clearRect(0,0,w,h);
+    
+    // 坐标系: X轴 T_eff (Log, Inverted), Y轴 L (Log)
+    // 范围: T [4.5, 3.0], L [3.0, 6.0] (Based on massive stars)
+    
+    const minLogT = 3.4, maxLogT = 4.6;
+    const minLogL = 3.0, maxLogL = 6.0;
+    
+    function mapX(logT) { return w * 0.1 + (maxLogT - logT)/(maxLogT - minLogT) * (w * 0.8); }
+    function mapY(logL) { return h * 0.9 - (logL - minLogL)/(maxLogL - minLogL) * (h * 0.8); }
+    
+    // 绘制坐标轴
+    ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+    ctx.beginPath(); 
+    ctx.moveTo(w*0.1, h*0.9); ctx.lineTo(w*0.9, h*0.9);
+    ctx.moveTo(w*0.1, h*0.9); ctx.lineTo(w*0.1, h*0.1);
+    ctx.stroke();
+    
+    // 绘制完整的暗淡轨迹
+    ctx.beginPath();
+    track.forEach((p, i) => {
+        let x = mapX(Math.log10(p.T));
+        let y = mapY(Math.log10(p.L));
+        if(i==0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.strokeStyle = '#333'; ctx.stroke();
+    
+    // 绘制当前进度
+    let p_current = track[0];
+    let endIdx = Math.floor(progress * (track.length-1));
+    if (endIdx > 0) p_current = track[endIdx]; // 简化处理
+    
+    let curX = mapX(Math.log10(p_current.T));
+    let curY = mapY(Math.log10(p_current.L));
+    
+    ctx.fillStyle = '#4da6ff';
+    ctx.beginPath(); ctx.arc(curX, curY, 4, 0, Math.PI*2); ctx.fill();
+}
+
+// --- 阶段二：爆炸可视化 ---
+function drawExplosionVisual(data) {
+    const ctx = UI.cvsVis.getContext('2d');
+    const w = UI.cvsVis.width;
+    const h = UI.cvsVis.height;
+    
+    ctx.clearRect(0,0,w,h);
+    
+    // 半径随时间膨胀
+    // 为了视觉效果，使用 Log 或 Sqrt 缩放，否则后期太大
+    let maxR_phys = 2e15; 
+    let r_pixel = (data.R / maxR_phys) * (h * 0.45);
+    if(r_pixel < 5) r_pixel = 5;
+    
+    // 颜色随温度变化 (Blackbody approx)
+    let color = kelvinToRGB(data.T);
+    
+    const cx = w/2, cy = h/2;
+    
+    // 绘制激波层
+    let grad = ctx.createRadialGradient(cx, cy, r_pixel*0.5, cx, cy, r_pixel);
+    grad.addColorStop(0, `rgba(${color.r},${color.g},${color.b}, 1)`);
+    grad.addColorStop(1, `rgba(${color.r},${color.g},${color.b}, 0)`);
+    
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx, cy, r_pixel, 0, Math.PI*2); ctx.fill();
+    
+    // 添加一点随机湍流纹理
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for(let i=0; i<5; i++) {
+        let angle = Math.random() * Math.PI * 2;
+        let dist = Math.random() * r_pixel * 0.8;
+        ctx.fillStyle = `rgba(255,255,255, 0.2)`;
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(angle)*dist, cy + Math.sin(angle)*dist, r_pixel*0.2, 0, Math.PI*2);
+        ctx.fill();
+    }
+    ctx.restore();
+}
+
+function drawLightCurve(dataHistory) {
+    const ctx = UI.cvsRight.getContext('2d');
+    const w = UI.cvsRight.width;
+    const h = UI.cvsRight.height;
+    ctx.clearRect(0,0,w,h);
+    
+    // Bounds
+    const maxY = 44; // Log L ~ 44 (SN peak)
+    const minY = 38; 
+    const maxX = 150; // days
+    
+    const padL = 30, padB = 20;
+    const drawW = w - padL, drawH = h - padB;
+    
+    // Axes
+    ctx.strokeStyle = '#444'; ctx.beginPath();
+    ctx.moveTo(padL, h-padB); ctx.lineTo(w, h-padB);
+    ctx.moveTo(padL, h-padB); ctx.lineTo(padL, 0);
+    ctx.stroke();
+    
+    ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    dataHistory.forEach((d, i) => {
+        let val = Math.log10(d.L);
+        let x = padL + (d.t / maxX) * drawW;
+        let y = (h - padB) - ((val - minY)/(maxY - minY)) * drawH;
+        if(i==0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+}
+
+function drawTempCurve(dataHistory) {
+    const ctx = UI.cvsLeft.getContext('2d');
+    const w = UI.cvsLeft.width;
+    const h = UI.cvsLeft.height;
+    ctx.clearRect(0,0,w,h);
+    
+    // Bounds T: 20000K -> 0K
+    const maxT = 15000;
+    const maxX = 150;
+    
+    const padL = 30, padB = 20;
+    const drawW = w - padL, drawH = h - padB;
+    
+    // Axes
+    ctx.strokeStyle = '#444'; ctx.beginPath();
+    ctx.moveTo(padL, h-padB); ctx.lineTo(w, h-padB);
+    ctx.moveTo(padL, h-padB); ctx.lineTo(padL, 0);
+    ctx.stroke();
+    
+    ctx.strokeStyle = '#ff5555'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    dataHistory.forEach((d, i) => {
+        let x = padL + (d.t / maxX) * drawW;
+        let y = (h - padB) - (d.T / maxT) * drawH;
+        if(i==0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+}
+
+// 辅助：黑体颜色计算
+function kelvinToRGB(k) {
+    let temp = k / 100;
+    let r, g, b;
+    if (temp <= 66) {
+        r = 255;
+        g = 99.47 * Math.log(temp) - 161.11;
+        if (temp <= 19) b = 0; else b = 138.51 * Math.log(temp - 10) - 305.04;
+    } else {
+        r = 329.69 * Math.pow(temp - 60, -0.133);
+        g = 288.12 * Math.pow(temp - 60, -0.075);
+        b = 255;
+    }
+    return { 
+        r: Math.min(255, Math.max(0, r)), 
+        g: Math.min(255, Math.max(0, g)), 
+        b: Math.min(255, Math.max(0, b)) 
+    };
+}
+
+function renderLoop() {
+    requestAnimationFrame(renderLoop);
+}
+
+function resetSim() {
+    STATE.phase = 'IDLE';
+    UI.phaseDisp.innerText = "IDLE";
+    UI.phaseDisp.style.color = "#888";
+    
+    UI.btnEvolve.disabled = false;
+    UI.slInitMass.disabled = false;
+    UI.slExpE.disabled = false;
+    UI.slNi.disabled = false;
+    UI.btnExplode.disabled = true;
+    
+    UI.outRes.style.display = 'none';
+    UI.monitor.innerText = "Wait for initialization...";
+    
+    // 清空画布
+    [UI.cvsVis, UI.cvsLeft, UI.cvsRight].forEach(c => {
+        c.getContext('2d').clearRect(0,0,c.width,c.height);
+    });
+    
+    UI.lblLeft.innerText = "H-R Diagram";
+    UI.lblRight.innerText = "Light Curve";
+}
+
+// 启动
+init();
+
+</script>
+</body>
+</html>
