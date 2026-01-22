@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // ==========================================
-// 0. 公共函数：GLSL 噪声算法 (Simplex Noise)
+// 0. GLSL 噪声算法
 // ==========================================
 const noiseChunk = `
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -57,43 +57,37 @@ float snoise(vec3 v) {
 `;
 
 // ==========================================
-// 1. 恒星本体着色器 (Star Body)
-//    关键升级：物理沸腾(Vertex Displacement) + 耀斑(Flares)
+// 1. 恒星本体着色器
 // ==========================================
 
 const starVertexShader = `
 uniform float time;
-uniform float boilScale; // 沸腾幅度 (物理形变程度)
+uniform float boilScale; 
 uniform float boilSpeed;
 
 varying vec2 vUv;
 varying vec3 vNormal;
 varying vec3 vModelPosition;
 varying vec3 vViewPosition;
-varying float vDisplacement; // 将位移量传递给片元，用于温度映射
+varying float vDisplacement; 
 
 ${noiseChunk}
 
 void main() {
     vUv = uv;
-    // 原始法线
     vec3 objectNormal = normalize(normal);
     
-    // --- 物理升级：对流沸腾计算 ---
-    // 使用低频噪声模拟大尺度的对流泡 (Convection Cells)
-    // 这种变形对应了恒星演化后期外层的不稳定性
-    float noiseVal = snoise(objectNormal * 2.0 + time * boilSpeed);
+    // --- 强化物理沸腾 ---
+    // 增加频率 (* 2.5) 让波浪更密集
+    float noiseVal = snoise(objectNormal * 2.5 + time * boilSpeed);
     
-    // 顶点位移：沿法线方向推挤顶点
-    // 正值凸起(热上涌)，负值凹陷(冷下沉)
+    // 顶点位移
     vec3 newPosition = position + objectNormal * noiseVal * boilScale;
     
-    // 记录位移量供片元着色器使用 (越凸起越热)
     vDisplacement = noiseVal;
     
-    // 传递坐标
     vNormal = normalize(normalMatrix * objectNormal);
-    vModelPosition = position; // 保持原始坐标用于切割，防止切口抖动
+    vModelPosition = position; 
     
     vec4 mvPosition = modelViewMatrix * vec4(newPosition, 1.0);
     vViewPosition = -mvPosition.xyz;
@@ -113,66 +107,57 @@ varying vec2 vUv;
 varying vec3 vNormal;
 varying vec3 vModelPosition;
 varying vec3 vViewPosition;
-varying float vDisplacement; // 来自顶点的凸起程度
+varying float vDisplacement; 
 
 ${noiseChunk}
 
 void main() {
-    // 1. 洋葱切割逻辑
+    // 1. 洋葱切割
     float angle = atan(vModelPosition.x, vModelPosition.z);
-    if (angle > 0.0 && angle < cutAngle) {
-        discard;
-    }
+    if (angle > 0.0 && angle < cutAngle) discard;
 
     vec3 normal = normalize(vNormal);
     if (!gl_FrontFacing) normal = -normal;
 
-    // 2. 表面纹理 (Granulation)
-    // 结合三层噪声模拟米粒组织
+    // 2. 表面纹理 (增强对比度)
     float n1 = snoise(normal * 3.0 + time * 0.2);
     float n2 = snoise(normal * 10.0 + time * 0.5);
-    float n3 = snoise(normal * 25.0 + time * 0.8); // 高频细节
-    float textureNoise = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+    float n3 = snoise(normal * 25.0 + time * 0.8); 
+    float textureNoise = n1 * 0.6 + n2 * 0.3 + n3 * 0.1; // 调整权重
 
-    // 3. 温度映射 (物理耦合)
-    // 颜色不再只看纹理，而是和物理位移挂钩
-    // 凸起的地方(vDisplacement > 0)更热更亮
-    float tempFactor = textureNoise * 0.4 + vDisplacement * 0.6;
-    vec3 surfaceColor = mix(colorCool, colorHot, smoothstep(-0.4, 0.8, tempFactor));
+    // 3. 温度映射 (更激进的冷热混合)
+    float tempFactor = textureNoise * 0.3 + vDisplacement * 0.7; // 位移权重更高
+    vec3 surfaceColor = mix(colorCool, colorHot, smoothstep(-0.3, 0.6, tempFactor));
 
-    // 4. --- 物理升级：磁重联耀斑 (Solar Flares) ---
-    // 模拟磁场活动：当局部湍流极其剧烈时，释放能量
-    float flareNoise = snoise(normal * 8.0 + time * 1.5);
-    // 阈值判定：只在噪声 > 0.75 的极端区域产生耀斑
-    float flareMask = smoothstep(0.75, 1.0, flareNoise); 
-    // 叠加极亮白色 (能量释放)
-    surfaceColor += vec3(1.0, 1.0, 1.0) * flareMask * 3.0; 
+    // 4. 磁重联耀斑 (降低阈值，增加亮度)
+    float flareNoise = snoise(normal * 6.0 + time * 1.8);
+    // 阈值从 0.75 降到 0.65，耀斑更容易出现
+    float flareMask = smoothstep(0.65, 0.95, flareNoise); 
+    // 亮度从 3.0 提至 5.0，更刺眼
+    surfaceColor += vec3(1.0, 0.9, 0.8) * flareMask * 5.0; 
 
-    // 5. 光照模型 (Fresnel)
+    // 5. 光照模型
     vec3 viewDir = normalize(vViewPosition);
     float fresnel = dot(viewDir, normal);
     fresnel = clamp(fresnel, 0.0, 1.0);
     
     if (gl_FrontFacing) {
-        // 外表面
-        float limbDarkening = 0.3 + 0.7 * fresnel;
-        float atmosphere = pow(1.0 - fresnel, 3.5);
+        float limbDarkening = 0.2 + 0.8 * fresnel;
+        float atmosphere = pow(1.0 - fresnel, 3.0);
         
         vec3 finalColor = surfaceColor * limbDarkening;
-        finalColor += colorHot * atmosphere * 1.2;
+        finalColor += colorHot * atmosphere * 1.5;
         gl_FragColor = vec4(finalColor, 1.0);
     } else {
-        // 内表面
         vec3 innerColor = surfaceColor * 0.6;
-        innerColor += colorHot * 0.3 * pow(fresnel, 2.0);
+        innerColor += colorHot * 0.4 * pow(fresnel, 2.0);
         gl_FragColor = vec4(innerColor, 1.0);
     }
 }
 `;
 
 // ==========================================
-// 2. 太阳风/日冕着色器 (Solar Wind / Corona)
-//    独立层：模拟物质抛射和气体逃逸
+// 2. 太阳风着色器
 // ==========================================
 
 const coronaVertexShader = `
@@ -193,16 +178,14 @@ varying vec3 vNormal;
 ${noiseChunk}
 
 void main() {
-    // 太阳风模拟：沿法线向外流动的噪声
-    // 坐标减去 time，让纹理看起来在向外“喷射”
-    float flowNoise = snoise(vNormal * 3.5 - vec3(0.0, time * 1.5, 0.0));
+    // 太阳风流速加快 (* 2.0)
+    float flowNoise = snoise(vNormal * 3.0 - vec3(0.0, time * 2.0, 0.0));
     
-    // 视线边缘更亮 (Fresnel)，中心透明
-    vec3 viewDir = vec3(0.0, 0.0, 1.0); // 简化视线近似
-    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.0);
+    vec3 viewDir = vec3(0.0, 0.0, 1.0); 
+    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 1.5);
     
-    // 透明度计算：结合流动噪声和菲涅尔效应
-    float alpha = smoothstep(0.2, 0.8, flowNoise) * 0.5 * fresnel;
+    // 增加不透明度 (0.5 -> 0.6)
+    float alpha = smoothstep(0.1, 0.7, flowNoise) * 0.6 * fresnel;
     
     gl_FragColor = vec4(colorWind, alpha);
 }
@@ -215,14 +198,13 @@ export class ProgenitorStar {
     constructor(scene) {
         this.scene = scene;
         this.layers = []; 
-        this.corona = null; // 太阳风层
+        this.corona = null;
         this.baseRadius = 4.0;
         this.targetCutAngle = 0;
-        console.log("物理仿真核心已加载：包含沸腾变形、耀斑、太阳风");
+        console.log("物理加强版 ProgenitorStar 已加载");
     }
 
     init() {
-        // --- A. 创建恒星本体 (Star Body) ---
         const layerData = [
             { name: "Fe (Core)", radius: 0.15, colorHot: 0xffffff, colorCool: 0x99ccff },
             { name: "Si",        radius: 0.30, colorHot: 0xffeba1, colorCool: 0xcc8800 },
@@ -234,17 +216,18 @@ export class ProgenitorStar {
         ];
 
         layerData.forEach(data => {
-            // 关键：增加网格细分度 (200x200)，否则物理沸腾看起来会像折纸
-            const geometry = new THREE.SphereGeometry(this.baseRadius * data.radius, 200, 200);
+            const geometry = new THREE.SphereGeometry(this.baseRadius * data.radius, 256, 256);
             
             const uniforms = {
                 time: { value: Math.random() * 100 },
                 colorHot: { value: new THREE.Color(data.colorHot) },
                 colorCool: { value: new THREE.Color(data.colorCool) },
                 cutAngle: { value: 0.0 },
-                // 物理参数：H包层受对流影响最大，内核受简并压支撑相对稳定
-                boilScale: { value: data.name.includes("H") ? 0.08 : 0.01 }, // 变形幅度
-                boilSpeed: { value: data.name.includes("H") ? 0.4 : 0.1 }    // 沸腾速度
+                // --- 强化参数 ---
+                // boilScale: 从 0.08 提升到 0.15 (变形更夸张)
+                // boilSpeed: 从 0.4 提升到 0.8 (沸腾更快)
+                boilScale: { value: data.name.includes("H") ? 0.15 : 0.02 }, 
+                boilSpeed: { value: data.name.includes("H") ? 0.8 : 0.2 }    
             };
 
             const material = new THREE.ShaderMaterial({
@@ -260,21 +243,20 @@ export class ProgenitorStar {
             this.layers.push({ mesh, uniforms });
         });
 
-        // --- B. 创建太阳风/日冕层 (Corona) ---
-        // 这是一个比恒星稍大的球体，半透明
-        const coronaGeo = new THREE.SphereGeometry(this.baseRadius * 1.25, 64, 64);
+        // 太阳风
+        const coronaGeo = new THREE.SphereGeometry(this.baseRadius * 1.3, 64, 64);
         const coronaUniforms = {
             time: { value: 0 },
-            colorWind: { value: new THREE.Color(0xff5500) } // 橙色恒星风
+            colorWind: { value: new THREE.Color(0xff6600) } 
         };
         const coronaMat = new THREE.ShaderMaterial({
             uniforms: coronaUniforms,
             vertexShader: coronaVertexShader,
             fragmentShader: coronaFragmentShader,
-            side: THREE.BackSide, // 渲染背面
+            side: THREE.BackSide,
             transparent: true,
-            depthWrite: false, // 不遮挡内部
-            blending: THREE.AdditiveBlending // 发光叠加模式
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
         });
         
         this.corona = new THREE.Mesh(coronaGeo, coronaMat);
@@ -282,7 +264,6 @@ export class ProgenitorStar {
     }
 
     update(deltaTime) {
-        // 1. 更新恒星本体
         if (this.layers.length > 0) {
             const currentAngle = this.layers[0].uniforms.cutAngle.value;
             const newAngle = THREE.MathUtils.lerp(currentAngle, this.targetCutAngle, deltaTime * 2.0);
@@ -294,19 +275,16 @@ export class ProgenitorStar {
             });
         }
 
-        // 2. 更新太阳风
         if (this.corona) {
-            this.corona.material.uniforms.time.value += deltaTime * 0.5;
-            // 太阳风轻微呼吸效果 (脉动)
-            const pulse = 1.0 + Math.sin(this.corona.material.uniforms.time.value * 2.0) * 0.01;
+            this.corona.material.uniforms.time.value += deltaTime * 0.8;
+            // 呼吸幅度加大
+            const pulse = 1.0 + Math.sin(this.corona.material.uniforms.time.value * 3.0) * 0.03;
             this.corona.scale.set(pulse, pulse, pulse);
         }
     }
 
     toggleCutout(isOpen) {
         this.targetCutAngle = isOpen ? Math.PI / 1.5 : 0.0;
-        
-        // 当查看内部结构时，隐藏外层的太阳风以防遮挡
         if (this.corona) {
             this.corona.visible = !isOpen; 
         }

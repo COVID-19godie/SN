@@ -12,13 +12,17 @@ try {
 
     // 3. 动画循环
     const clock = new THREE.Clock();
+    let timeScale = 1.0; // 默认时间流速
 
     function animate() {
         requestAnimationFrame(animate);
-        const deltaTime = clock.getDelta();
         
-        // 更新恒星逻辑 (如自转、切割动画)
-        if (star) star.update(deltaTime);
+        // 获取上一帧间隔，并乘以时间倍率
+        const rawDelta = clock.getDelta();
+        const scaledDelta = rawDelta * timeScale;
+        
+        // 更新恒星逻辑
+        if (star) star.update(scaledDelta);
         
         // 渲染
         if (sceneManager) sceneManager.render();
@@ -33,34 +37,38 @@ try {
     animate();
 
     // ==========================================
-    // 6. 绑定按钮逻辑 (关键修复)
+    // 6. UI 事件绑定
     // ==========================================
-    const btn = document.getElementById('structure-btn');
     
-    if (btn) {
-        // 先移除旧的事件 (防止重复绑定，虽在刷新后不重要但好习惯)
-        // 绑定点击事件
-        btn.addEventListener('click', () => {
-            console.log("按钮被点击了！"); // 调试信息
-            
-            const isOpening = btn.innerText.includes("INITIALIZE");
+    // A. 时间流速滑杆
+    const timeSlider = document.getElementById('time-slider');
+    const timeValue = document.getElementById('time-value');
+    
+    if (timeSlider && timeValue) {
+        timeSlider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            timeScale = val;
+            timeValue.innerText = val.toFixed(1) + "x";
+        });
+    }
 
+    // B. 剖面开关按钮
+    const btn = document.getElementById('structure-btn');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            const isOpening = btn.innerText.includes("INITIALIZE");
             if (isOpening) {
-                // 打开
                 star.toggleCutout(true);
                 btn.innerText = "CLOSE STRUCTURE VIEW";
                 btn.style.borderLeft = "4px solid #00ffaa"; 
                 btn.style.color = "#aaffdd";
             } else {
-                // 关闭
                 star.toggleCutout(false);
                 btn.innerText = "INITIALIZE CUTAWAY VIEW";
                 btn.style.borderLeft = "4px solid #ffaa00"; 
                 btn.style.color = "#ddd";
             }
         });
-    } else {
-        console.error("未找到 ID 为 'structure-btn' 的按钮，请检查 HTML");
     }
 
 } catch (error) {

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>超新星可视化 - 物理仿真版</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: 'Segoe UI', sans-serif; }
+        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        /* 标题区域 */
+        #title-area { position: absolute; top: 30px; left: 40px; z-index: 10; pointer-events: none; }
+        h1 { margin: 0; font-weight: 300; font-size: 28px; letter-spacing: 4px; text-transform: uppercase; text-shadow: 0 0 10px rgba(255, 100, 0, 0.5); }
+        .subtitle { font-size: 14px; color: #aaa; letter-spacing: 2px; margin-top: 5px; text-transform: uppercase; }
+
+        /* UI 控制面板 */
+        #ui-container { 
+            position: absolute; 
+            bottom: 40px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            z-index: 20; 
+            text-align: center;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px 40px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-width: 300px;
+        }
+
+        /* 按钮样式 */
+        .sci-fi-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-left: 4px solid #ffaa00;
+            color: #ddd;
+            padding: 10px 20px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            width: 100%;
+        }
+        .sci-fi-btn:hover { background: rgba(255, 170, 0, 0.2); border-color: #ffaa00; color: white; }
+
+        /* 滑杆区域样式 */
+        .slider-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            font-size: 14px;
+            color: #ccc;
+        }
+        input[type=range] {
+            flex-grow: 1;
+            cursor: pointer;
+        }
+        .slider-label { width: 80px; text-align: left; }
+        .slider-value { width: 40px; text-align: right; color: #ffaa00; font-weight: bold; }
+
+    </style>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="title-area">
+        <h1>Type II Supernova</h1>
+        <div class="subtitle">Progenitor Evolution & Physics Simulation</div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-container">
+        <div class="slider-group">
+            <span class="slider-label">TIME SPEED</span>
+            <input type="range" id="time-slider" min="0" max="5" step="0.1" value="1.0">
+            <span id="time-value" class="slider-value">1.0x</span>
+        </div>
+
+        <button id="structure-btn" class="sci-fi-btn">
+            INITIALIZE CUTAWAY VIEW
+        </button>
+    </div>
+
+    <script type="module" src="./js/main.js"></script>
+</body>
+</html>
