@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 // ==========================================
-// 0. GLSL 噪声算法
+// 0. GLSL 噪声算法 (保持不变)
 // ==========================================
 const noiseChunk = `
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -77,12 +77,11 @@ void main() {
     vUv = uv;
     vec3 objectNormal = normalize(normal);
     
-    // 物理沸腾: 使用更密集的噪声频率
+    // 物理沸腾
     float noiseVal = snoise(objectNormal * 2.5 + time * boilSpeed);
     
     // 顶点位移
     vec3 newPosition = position + objectNormal * noiseVal * boilScale;
-    
     vDisplacement = noiseVal;
     
     vNormal = normalize(normalMatrix * objectNormal);
@@ -100,7 +99,7 @@ uniform float time;
 uniform vec3 colorHot;
 uniform vec3 colorCool;
 uniform float cutAngle;
-uniform float flareIntensity; // 新增：耀斑强度控制
+uniform float flareIntensity; 
 
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -159,11 +158,10 @@ export class ProgenitorStar {
     constructor(scene) {
         this.scene = scene;
         this.layers = []; 
-        this.labels = []; // 存储标签
+        this.labels = []; 
         this.baseRadius = 4.0;
         this.targetCutAngle = 0;
         
-        // 教学参数
         this.params = {
             boilSpeed: 0.8,
             boilScale: 0.15,
@@ -171,7 +169,7 @@ export class ProgenitorStar {
             rotationSpeed: 0.1
         };
         
-        console.log("教学版 ProgenitorStar 已加载: 使用Icosahedron细分网格");
+        console.log("ProgenitorStar Loaded (Detail Fixed)");
     }
 
     init() {
@@ -186,9 +184,8 @@ export class ProgenitorStar {
         ];
 
         layerData.forEach((data, index) => {
-            // [核心修复]: 将细分等级从 16 改为 5
-            // detail=5 产生约 20,000 个面，足够细腻且极其流畅
-            // detail=16 会产生数亿个面，导致浏览器崩溃
+            // 【关键修复】detail 设为 5，面数约2万，既细腻又流畅
+            // 之前的 16 会导致 crash
             const geometry = new THREE.IcosahedronGeometry(this.baseRadius * data.radius, 5);
             
             const uniforms = {
@@ -196,8 +193,6 @@ export class ProgenitorStar {
                 colorHot: { value: new THREE.Color(data.colorHot) },
                 colorCool: { value: new THREE.Color(data.colorCool) },
                 cutAngle: { value: 0.0 },
-                
-                // 动态参数
                 boilScale: { value: data.name.includes("H") ? this.params.boilScale : 0.02 }, 
                 boilSpeed: { value: data.name.includes("H") ? this.params.boilSpeed : 0.2 },
                 flareIntensity: { value: data.name.includes("H") ? this.params.flareIntensity : 0.0 }
@@ -215,14 +210,12 @@ export class ProgenitorStar {
             this.scene.add(mesh);
             this.layers.push({ mesh, uniforms, isOuter: data.name.includes("H") });
 
-            // [新增]: 添加教学标签
             const div = document.createElement('div');
             div.className = 'star-label';
             div.innerHTML = `<span class="chem-symbol">${data.symbol}</span> ${data.name}`;
             const label = new CSS2DObject(div);
-            // 标签位置设在切面的一侧
             label.position.set(this.baseRadius * data.radius * 0.8, this.baseRadius * data.radius * 0.5, 0); 
-            label.visible = false; // 初始隐藏
+            label.visible = false; 
             mesh.add(label);
             this.labels.push(label);
         });
@@ -233,36 +226,29 @@ export class ProgenitorStar {
             const currentAngle = this.layers[0].uniforms.cutAngle.value;
             const newAngle = THREE.MathUtils.lerp(currentAngle, this.targetCutAngle, deltaTime * 2.0);
             
-            // 判断是否应该显示标签 (只有切开且角度足够大时才显示)
             const showLabels = newAngle > 0.5;
 
             this.layers.forEach((layer, index) => {
-                // 更新时间与自转
                 const speedMultiplier = 1.0 - (index * 0.08); 
                 layer.uniforms.time.value += deltaTime * speedMultiplier; 
                 layer.uniforms.cutAngle.value = newAngle;
 
-                // 实时更新教学参数
                 if (layer.isOuter) {
                     layer.uniforms.boilSpeed.value = this.params.boilSpeed;
                     layer.uniforms.boilScale.value = this.params.boilScale;
                     layer.uniforms.flareIntensity.value = this.params.flareIntensity;
                 }
                 
-                // 自转演示
                 layer.mesh.rotation.y += deltaTime * this.params.rotationSpeed * (1.0 - index * 0.1);
 
-                // 更新标签可见性
                 if (this.labels[index]) {
                     this.labels[index].visible = showLabels;
-                    // 动态调整标签透明度 (可选)
                     this.labels[index].element.style.opacity = showLabels ? "1" : "0";
                 }
             });
         }
     }
 
-    // 设置参数接口
     setParams(key, value) {
         if (this.params.hasOwnProperty(key)) {
             this.params[key] = value;
