@@ -3,66 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>超新星可视化 - 物理仿真版</title>
+    <title>恒星演化教学演示系统</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: 'Segoe UI', sans-serif; }
         canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
         
-        /* 标题区域 */
+        /* 标题 */
         #title-area { position: absolute; top: 30px; left: 40px; z-index: 10; pointer-events: none; }
         h1 { margin: 0; font-weight: 300; font-size: 28px; letter-spacing: 4px; text-transform: uppercase; text-shadow: 0 0 10px rgba(255, 100, 0, 0.5); }
         .subtitle { font-size: 14px; color: #aaa; letter-spacing: 2px; margin-top: 5px; text-transform: uppercase; }
 
-        /* UI 控制面板 */
+        /* 教学控制台 */
         #ui-container { 
             position: absolute; 
-            bottom: 40px; 
-            left: 50%; 
-            transform: translateX(-50%); 
+            bottom: 30px; 
+            right: 30px; /* 改到右下角，不遮挡视线 */
             z-index: 20; 
-            text-align: center;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 20px 40px;
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(10px);
+            background: rgba(0, 20, 40, 0.8);
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 200, 255, 0.3);
+            backdrop-filter: blur(12px);
             display: flex;
             flex-direction: column;
-            gap: 15px;
-            min-width: 300px;
+            gap: 12px;
+            width: 280px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
         }
 
-        /* 按钮样式 */
+        .panel-title { font-size: 14px; color: #00ccff; border-bottom: 1px solid #005577; padding-bottom: 5px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;}
+
+        /* 滑杆组 */
+        .slider-group { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #ccc; }
+        input[type=range] { flex-grow: 1; margin: 0 10px; cursor: pointer; accent-color: #ffaa00; }
+        .slider-label { width: 70px; text-align: left; }
+        .slider-value { width: 35px; text-align: right; color: #ffaa00; font-family: monospace; }
+
+        /* 按钮 */
         .sci-fi-btn {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-left: 4px solid #ffaa00;
-            color: #ddd;
-            padding: 10px 20px;
+            background: linear-gradient(90deg, rgba(255,100,0,0.2), rgba(255,50,0,0.2));
+            border: 1px solid rgba(255, 150, 0, 0.4);
+            color: #fff;
+            padding: 12px;
             font-size: 14px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.2s;
             text-transform: uppercase;
             letter-spacing: 2px;
-            width: 100%;
+            margin-top: 10px;
+            font-weight: bold;
         }
-        .sci-fi-btn:hover { background: rgba(255, 170, 0, 0.2); border-color: #ffaa00; color: white; }
+        .sci-fi-btn:hover { background: rgba(255, 100, 0, 0.4); border-color: #ffaa00; box-shadow: 0 0 10px rgba(255,100,0,0.3); }
 
-        /* 滑杆区域样式 */
-        .slider-group {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 15px;
+        /* --- 教学标签样式 --- */
+        .star-label {
+            color: rgba(255, 255, 255, 0.9);
+            font-family: 'Arial', sans-serif;
+            font-weight: bold;
             font-size: 14px;
-            color: #ccc;
+            text-shadow: 0 0 5px #000;
+            padding: 4px 8px;
+            border-left: 3px solid #ffaa00;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 0 4px 4px 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
         }
-        input[type=range] {
-            flex-grow: 1;
-            cursor: pointer;
-        }
-        .slider-label { width: 80px; text-align: left; }
-        .slider-value { width: 40px; text-align: right; color: #ffaa00; font-weight: bold; }
+        .chem-symbol { color: #ffaa00; font-size: 16px; margin-right: 5px; }
 
     </style>
     
@@ -77,23 +84,78 @@
 </head>
 <body>
     <div id="title-area">
-        <h1>Type II Supernova</h1>
-        <div class="subtitle">Progenitor Evolution & Physics Simulation</div>
+        <h1>Stellar Core Collapse</h1>
+        <div class="subtitle">Physics Simulation & Structure Analysis</div>
     </div>
 
     <div id="canvas-container"></div>
 
     <div id="ui-container">
+        <div class="panel-title">Simulation Parameters</div>
+        
         <div class="slider-group">
-            <span class="slider-label">TIME SPEED</span>
-            <input type="range" id="time-slider" min="0" max="5" step="0.1" value="1.0">
-            <span id="time-value" class="slider-value">1.0x</span>
+            <span class="slider-label">Boil Speed</span>
+            <input type="range" id="speed-slider" min="0" max="2" step="0.1" value="0.8">
+            <span id="speed-val" class="slider-value">0.8</span>
+        </div>
+
+        <div class="slider-group">
+            <span class="slider-label">Turbulence</span>
+            <input type="range" id="scale-slider" min="0" max="0.3" step="0.01" value="0.15">
+            <span id="scale-val" class="slider-value">0.15</span>
+        </div>
+
+        <div class="slider-group">
+            <span class="slider-label">Flare Int.</span>
+            <input type="range" id="flare-slider" min="0" max="10" step="0.5" value="5.0">
+            <span id="flare-val" class="slider-value">5.0</span>
+        </div>
+
+        <div class="slider-group">
+            <span class="slider-label">Rotation</span>
+            <input type="range" id="rot-slider" min="0" max="1" step="0.05" value="0.1">
+            <span id="rot-val" class="slider-value">0.1</span>
         </div>
 
         <button id="structure-btn" class="sci-fi-btn">
-            INITIALIZE CUTAWAY VIEW
+            Open Cutaway View
         </button>
     </div>
+
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loader-content">
+            <div class="loader-text">INITIALIZING STELLAR PHYSICS...</div>
+            <div class="loader-bar"><div class="bar-fill"></div></div>
+        </div>
+    </div>
+
+    <style>
+        /* 加载页样式 */
+        #loading-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 9999;
+            display: flex; justify-content: center; align-items: center;
+            transition: opacity 0.5s ease;
+        }
+        .loader-content { text-align: center; width: 300px; }
+        .loader-text { 
+            color: #ffaa00; font-family: monospace; font-size: 16px; 
+            margin-bottom: 10px; letter-spacing: 2px; text-transform: uppercase;
+            animation: blink 1s infinite;
+        }
+        .loader-bar { 
+            width: 100%; height: 4px; background: #333; 
+            border-radius: 2px; overflow: hidden; 
+        }
+        .bar-fill {
+            width: 0%; height: 100%; background: #ffaa00;
+            animation: load 2s ease-out forwards;
+            box-shadow: 0 0 10px #ffaa00;
+        }
+        @keyframes load { 0% { width: 0%; } 100% { width: 100%; } }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    </style>
 
     <script type="module" src="./js/main.js"></script>
 </body>

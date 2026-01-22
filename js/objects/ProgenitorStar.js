@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 // ==========================================
 // 0. GLSL 噪声算法
@@ -59,7 +60,6 @@ float snoise(vec3 v) {
 // ==========================================
 // 1. 恒星本体着色器
 // ==========================================
-
 const starVertexShader = `
 uniform float time;
 uniform float boilScale; 
@@ -77,8 +77,7 @@ void main() {
     vUv = uv;
     vec3 objectNormal = normalize(normal);
     
-    // --- 强化物理沸腾 ---
-    // 增加频率 (* 2.5) 让波浪更密集
+    // 物理沸腾: 使用更密集的噪声频率
     float noiseVal = snoise(objectNormal * 2.5 + time * boilSpeed);
     
     // 顶点位移
@@ -101,7 +100,7 @@ uniform float time;
 uniform vec3 colorHot;
 uniform vec3 colorCool;
 uniform float cutAngle;
-uniform bool isShell;
+uniform float flareIntensity; // 新增：耀斑强度控制
 
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -119,27 +118,24 @@ void main() {
     vec3 normal = normalize(vNormal);
     if (!gl_FrontFacing) normal = -normal;
 
-    // 2. 表面纹理 (增强对比度)
+    // 2. 表面纹理
     float n1 = snoise(normal * 3.0 + time * 0.2);
     float n2 = snoise(normal * 10.0 + time * 0.5);
     float n3 = snoise(normal * 25.0 + time * 0.8); 
-    float textureNoise = n1 * 0.6 + n2 * 0.3 + n3 * 0.1; // 调整权重
+    float textureNoise = n1 * 0.6 + n2 * 0.3 + n3 * 0.1;
 
-    // 3. 温度映射 (更激进的冷热混合)
-    float tempFactor = textureNoise * 0.3 + vDisplacement * 0.7; // 位移权重更高
+    // 3. 温度映射
+    float tempFactor = textureNoise * 0.3 + vDisplacement * 0.7;
     vec3 surfaceColor = mix(colorCool, colorHot, smoothstep(-0.3, 0.6, tempFactor));
 
-    // 4. 磁重联耀斑 (降低阈值，增加亮度)
+    // 4. 可控耀斑
     float flareNoise = snoise(normal * 6.0 + time * 1.8);
-    // 阈值从 0.75 降到 0.65，耀斑更容易出现
     float flareMask = smoothstep(0.65, 0.95, flareNoise); 
-    // 亮度从 3.0 提至 5.0，更刺眼
-    surfaceColor += vec3(1.0, 0.9, 0.8) * flareMask * 5.0; 
+    surfaceColor += vec3(1.0, 0.95, 0.8) * flareMask * flareIntensity; 
 
-    // 5. 光照模型
+    // 5. 光照
     vec3 viewDir = normalize(vViewPosition);
-    float fresnel = dot(viewDir, normal);
-    fresnel = clamp(fresnel, 0.0, 1.0);
+    float fresnel = clamp(dot(viewDir, normal), 0.0, 1.0);
     
     if (gl_FrontFacing) {
         float limbDarkening = 0.2 + 0.8 * fresnel;
@@ -157,77 +153,54 @@ void main() {
 `;
 
 // ==========================================
-// 2. 太阳风着色器
-// ==========================================
-
-const coronaVertexShader = `
-varying vec2 vUv;
-varying vec3 vNormal;
-void main() {
-    vUv = uv;
-    vNormal = normalize(normalMatrix * normal);
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`;
-
-const coronaFragmentShader = `
-uniform float time;
-uniform vec3 colorWind;
-varying vec3 vNormal;
-
-${noiseChunk}
-
-void main() {
-    // 太阳风流速加快 (* 2.0)
-    float flowNoise = snoise(vNormal * 3.0 - vec3(0.0, time * 2.0, 0.0));
-    
-    vec3 viewDir = vec3(0.0, 0.0, 1.0); 
-    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 1.5);
-    
-    // 增加不透明度 (0.5 -> 0.6)
-    float alpha = smoothstep(0.1, 0.7, flowNoise) * 0.6 * fresnel;
-    
-    gl_FragColor = vec4(colorWind, alpha);
-}
-`;
-
-// ==========================================
-// 3. 主类逻辑
+// 2. 主类逻辑
 // ==========================================
 export class ProgenitorStar {
     constructor(scene) {
         this.scene = scene;
         this.layers = []; 
-        this.corona = null;
+        this.labels = []; // 存储标签
         this.baseRadius = 4.0;
         this.targetCutAngle = 0;
-        console.log("物理加强版 ProgenitorStar 已加载");
+        
+        // 教学参数
+        this.params = {
+            boilSpeed: 0.8,
+            boilScale: 0.15,
+            flareIntensity: 5.0,
+            rotationSpeed: 0.1
+        };
+        
+        console.log("教学版 ProgenitorStar 已加载: 使用Icosahedron细分网格");
     }
 
     init() {
         const layerData = [
-            { name: "Fe (Core)", radius: 0.15, colorHot: 0xffffff, colorCool: 0x99ccff },
-            { name: "Si",        radius: 0.30, colorHot: 0xffeba1, colorCool: 0xcc8800 },
-            { name: "O",         radius: 0.45, colorHot: 0xff4422, colorCool: 0x550000 },
-            { name: "Ne",        radius: 0.60, colorHot: 0xff00ff, colorCool: 0x440044 },
-            { name: "C",         radius: 0.75, colorHot: 0x22ff44, colorCool: 0x003300 },
-            { name: "He",        radius: 0.88, colorHot: 0x00ccff, colorCool: 0x001133 },
-            { name: "H (Envelope)", radius: 1.0,  colorHot: 0xffaa00, colorCool: 0xaa1100 }
+            { name: "Fe (Core)", symbol: "Fe", radius: 0.15, colorHot: 0xffffff, colorCool: 0x99ccff },
+            { name: "Si Shell",  symbol: "Si", radius: 0.30, colorHot: 0xffeba1, colorCool: 0xcc8800 },
+            { name: "O Shell",   symbol: "O",  radius: 0.45, colorHot: 0xff4422, colorCool: 0x550000 },
+            { name: "Ne Shell",  symbol: "Ne", radius: 0.60, colorHot: 0xff00ff, colorCool: 0x440044 },
+            { name: "C Shell",   symbol: "C",  radius: 0.75, colorHot: 0x22ff44, colorCool: 0x003300 },
+            { name: "He Shell",  symbol: "He", radius: 0.88, colorHot: 0x00ccff, colorCool: 0x001133 },
+            { name: "H Envelope",symbol: "H",  radius: 1.0,  colorHot: 0xffaa00, colorCool: 0xaa1100 }
         ];
 
-        layerData.forEach(data => {
-            const geometry = new THREE.SphereGeometry(this.baseRadius * data.radius, 256, 256);
+        layerData.forEach((data, index) => {
+            // [核心修复]: 将细分等级从 16 改为 5
+            // detail=5 产生约 20,000 个面，足够细腻且极其流畅
+            // detail=16 会产生数亿个面，导致浏览器崩溃
+            const geometry = new THREE.IcosahedronGeometry(this.baseRadius * data.radius, 5);
             
             const uniforms = {
                 time: { value: Math.random() * 100 },
                 colorHot: { value: new THREE.Color(data.colorHot) },
                 colorCool: { value: new THREE.Color(data.colorCool) },
                 cutAngle: { value: 0.0 },
-                // --- 强化参数 ---
-                // boilScale: 从 0.08 提升到 0.15 (变形更夸张)
-                // boilSpeed: 从 0.4 提升到 0.8 (沸腾更快)
-                boilScale: { value: data.name.includes("H") ? 0.15 : 0.02 }, 
-                boilSpeed: { value: data.name.includes("H") ? 0.8 : 0.2 }    
+                
+                // 动态参数
+                boilScale: { value: data.name.includes("H") ? this.params.boilScale : 0.02 }, 
+                boilSpeed: { value: data.name.includes("H") ? this.params.boilSpeed : 0.2 },
+                flareIntensity: { value: data.name.includes("H") ? this.params.flareIntensity : 0.0 }
             };
 
             const material = new THREE.ShaderMaterial({
@@ -240,53 +213,63 @@ export class ProgenitorStar {
             const mesh = new THREE.Mesh(geometry, material);
             mesh.name = data.name;
             this.scene.add(mesh);
-            this.layers.push({ mesh, uniforms });
-        });
+            this.layers.push({ mesh, uniforms, isOuter: data.name.includes("H") });
 
-        // 太阳风
-        const coronaGeo = new THREE.SphereGeometry(this.baseRadius * 1.3, 64, 64);
-        const coronaUniforms = {
-            time: { value: 0 },
-            colorWind: { value: new THREE.Color(0xff6600) } 
-        };
-        const coronaMat = new THREE.ShaderMaterial({
-            uniforms: coronaUniforms,
-            vertexShader: coronaVertexShader,
-            fragmentShader: coronaFragmentShader,
-            side: THREE.BackSide,
-            transparent: true,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending
+            // [新增]: 添加教学标签
+            const div = document.createElement('div');
+            div.className = 'star-label';
+            div.innerHTML = `<span class="chem-symbol">${data.symbol}</span> ${data.name}`;
+            const label = new CSS2DObject(div);
+            // 标签位置设在切面的一侧
+            label.position.set(this.baseRadius * data.radius * 0.8, this.baseRadius * data.radius * 0.5, 0); 
+            label.visible = false; // 初始隐藏
+            mesh.add(label);
+            this.labels.push(label);
         });
-        
-        this.corona = new THREE.Mesh(coronaGeo, coronaMat);
-        this.scene.add(this.corona);
     }
 
     update(deltaTime) {
         if (this.layers.length > 0) {
             const currentAngle = this.layers[0].uniforms.cutAngle.value;
             const newAngle = THREE.MathUtils.lerp(currentAngle, this.targetCutAngle, deltaTime * 2.0);
+            
+            // 判断是否应该显示标签 (只有切开且角度足够大时才显示)
+            const showLabels = newAngle > 0.5;
 
             this.layers.forEach((layer, index) => {
+                // 更新时间与自转
                 const speedMultiplier = 1.0 - (index * 0.08); 
                 layer.uniforms.time.value += deltaTime * speedMultiplier; 
                 layer.uniforms.cutAngle.value = newAngle;
+
+                // 实时更新教学参数
+                if (layer.isOuter) {
+                    layer.uniforms.boilSpeed.value = this.params.boilSpeed;
+                    layer.uniforms.boilScale.value = this.params.boilScale;
+                    layer.uniforms.flareIntensity.value = this.params.flareIntensity;
+                }
+                
+                // 自转演示
+                layer.mesh.rotation.y += deltaTime * this.params.rotationSpeed * (1.0 - index * 0.1);
+
+                // 更新标签可见性
+                if (this.labels[index]) {
+                    this.labels[index].visible = showLabels;
+                    // 动态调整标签透明度 (可选)
+                    this.labels[index].element.style.opacity = showLabels ? "1" : "0";
+                }
             });
         }
+    }
 
-        if (this.corona) {
-            this.corona.material.uniforms.time.value += deltaTime * 0.8;
-            // 呼吸幅度加大
-            const pulse = 1.0 + Math.sin(this.corona.material.uniforms.time.value * 3.0) * 0.03;
-            this.corona.scale.set(pulse, pulse, pulse);
+    // 设置参数接口
+    setParams(key, value) {
+        if (this.params.hasOwnProperty(key)) {
+            this.params[key] = value;
         }
     }
 
     toggleCutout(isOpen) {
         this.targetCutAngle = isOpen ? Math.PI / 1.5 : 0.0;
-        if (this.corona) {
-            this.corona.visible = !isOpen; 
-        }
     }
 }
